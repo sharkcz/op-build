@@ -1,5 +1,6 @@
 BR2_powerpc64le=y
 BR2_powerpc_power8=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_OP_BUILD_PATH)/patches/raptor-patches"
 BR2_KERNEL_HEADERS_5_3=y
 BR2_BINUTILS_EXTRA_CONFIG_OPTIONS="--enable-targets=powerpc64-linux"
 BR2_GCC_VERSION_6_X=y
