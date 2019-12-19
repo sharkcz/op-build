@@ -1,7 +1,7 @@
 From 2a4f8f6f67d1e0748bd20b4f721607ce7855ad30 Mon Sep 17 00:00:00 2001
 From: Stewart Smith <stewart@flamingspork.com>
 Date: Sun, 8 Dec 2019 19:06:25 -0800
-Subject: [PATCH] platform: add Raptor Blackbird support
+Subject: [PATCH 1/2] platform: add Raptor Blackbird support
 
 Based off the Raptor patch:
 https://git.raptorcs.com/git/blackbird-skiboot/commit/?id=c81f9d66592dc2a7cf7f6c59c3def5cee0638c1f
@@ -116,5 +116,5 @@ index 00000000..2d12c63c
 +	.op_display		= op_display_lpc,
 +};
 -- 
-2.23.0
+2.21.0
 
