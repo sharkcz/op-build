@@ -1,0 +1,27 @@
+From 459a97414ced599dd94fcc15ff44ed87f9c2b30f Mon Sep 17 00:00:00 2001
+From: Raptor Engineering Development Team <support@raptorengineering.com>
+Date: Fri, 26 Apr 2019 08:00:07 +0000
+Subject: [PATCH 2/2] Disable SBE console print as it significantly slows down
+ SBE execution Status information is already transmitted over Port 81h/82h to
+ the host system
+
+---
+ src/build/power_defs.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/build/power_defs.mk b/src/build/power_defs.mk
+index 4d36cd07..511a2504 100644
+--- a/src/build/power_defs.mk
++++ b/src/build/power_defs.mk
+@@ -35,7 +35,7 @@ FAPI_TRACE_LEVEL_DEF = 2
+ HOST_INTERFACE_AVAILABLE = 1
+ PERIODIC_IO_TOGGLE_SUPPORTED = 1
+ 
+-SBE_CONSOLE_SUPPORT = 1
++# SBE_CONSOLE_SUPPORT = 1
+ SBE_IPL_STATUS_LPC_SUPPORT = 1
+ 
+ export SBE_S0_SUPPORT = 1
+-- 
+2.21.0
+

@@ -1,0 +1,303 @@
+From 3801404ffb60e7563d0af44e05c7ba79d986c694 Mon Sep 17 00:00:00 2001
+From: Timothy Pearson <tpearson@raptorengineering.com>
+Date: Tue, 23 Apr 2019 21:38:04 +0000
+Subject: [PATCH 1/2] Send IPL status codes to BMC over LPC port 81h/82h
+
+Signed-off-by: Timothy Pearson <tpearson@raptorengineering.com>
+---
+ src/build/img_defs.mk            |  4 ++
+ src/build/power_defs.mk          |  1 +
+ src/sbefw/app/power/ipl_table.C  |  3 ++
+ src/sbefw/core/corefiles.mk      |  3 ++
+ src/sbefw/core/ipl.C             |  2 +
+ src/sbefw/core/sbeIPLStatusLPC.C | 91 ++++++++++++++++++++++++++++++++
+ src/sbefw/core/sbeIPLStatusLPC.H | 58 ++++++++++++++++++++
+ src/sbefw/core/sbeglobals.C      |  4 ++
+ src/sbefw/core/sbeglobals.H      |  4 ++
+ 9 files changed, 170 insertions(+)
+ create mode 100644 src/sbefw/core/sbeIPLStatusLPC.C
+ create mode 100644 src/sbefw/core/sbeIPLStatusLPC.H
+
+diff --git a/src/build/img_defs.mk b/src/build/img_defs.mk
+index 4bd4113b..a351b87d 100644
+--- a/src/build/img_defs.mk
++++ b/src/build/img_defs.mk
+@@ -520,6 +520,10 @@ ifdef SBE_CONSOLE_SUPPORT
+ GCC-DEFS += -DSBE_CONSOLE_SUPPORT
+ endif
+ 
++ifdef SBE_IPL_STATUS_LPC_SUPPORT
++GCC-DEFS += -DSBE_IPL_STATUS_LPC_SUPPORT
++endif
++
+ DEFS += $(GCC-DEFS)
+ ###########################################################################
+ 
+diff --git a/src/build/power_defs.mk b/src/build/power_defs.mk
+index c17598dc..4d36cd07 100644
+--- a/src/build/power_defs.mk
++++ b/src/build/power_defs.mk
+@@ -36,6 +36,7 @@ HOST_INTERFACE_AVAILABLE = 1
+ PERIODIC_IO_TOGGLE_SUPPORTED = 1
+ 
+ SBE_CONSOLE_SUPPORT = 1
++SBE_IPL_STATUS_LPC_SUPPORT = 1
+ 
+ export SBE_S0_SUPPORT = 1
+ export PIBMEM_REPAIR_SCOM_P9 = 1
+diff --git a/src/sbefw/app/power/ipl_table.C b/src/sbefw/app/power/ipl_table.C
+index 8f31aef6..b9d42427 100644
+--- a/src/sbefw/app/power/ipl_table.C
++++ b/src/sbefw/app/power/ipl_table.C
+@@ -109,6 +109,7 @@
+ #include "p9_fbc_utils.H"
+ #include "sbeSecureMemRegionManager.H"
+ 
++#include "sbeIPLStatusLPC.H"
+ #include "sbeConsole.H"
+ #include "sbecmdflushnvdimm.H"
+ 
+@@ -398,6 +399,7 @@ ReturnCode istepLpcInit( voidfuncptr_t i_hwp)
+     Target<TARGET_TYPE_PROC_CHIP > proc = plat_getChipTarget();
+     assert( NULL != i_hwp );
+     SBE_EXEC_HWP(rc, reinterpret_cast<sbeIstepHwpProc_t>( i_hwp ), proc)
++    SBE_ISTEP_LPC_INIT;
+     SBE_UART_INIT;
+     SBE_MSG_CONSOLE( SBE_CONSOLE_WELCOME_MSG );
+ 
+@@ -661,6 +663,7 @@ ReturnCode istepStartInstruction( voidfuncptr_t i_hwp)
+     ReturnCode rc = FAPI2_RC_SUCCESS;
+ 
+     SBE_MSG_CONSOLE("SBE starting hostboot");
++    SBE_ISTEP_LPC_DISABLE;
+     SBE_UART_DISABLE;
+     rc = istepWithCore(i_hwp);
+     if(rc == FAPI2_RC_SUCCESS)
+diff --git a/src/sbefw/core/corefiles.mk b/src/sbefw/core/corefiles.mk
+index b14d0b0f..ef5a76bb 100644
+--- a/src/sbefw/core/corefiles.mk
++++ b/src/sbefw/core/corefiles.mk
+@@ -62,6 +62,9 @@ endif
+ ifeq ($(SBE_CONSOLE_SUPPORT), 1)
+ CORESEEPROM-CPP-SOURCES += sbeConsole.C
+ endif
++ifeq ($(SBE_IPL_STATUS_LPC_SUPPORT), 1)
++CORESEEPROM-CPP-SOURCES += sbeIPLStatusLPC.C
++endif
+ 
+ CORESEEPROM-C-SOURCES =
+ CORESEEPROM-S-SOURCES =
+diff --git a/src/sbefw/core/ipl.C b/src/sbefw/core/ipl.C
+index 14dd3162..68ce3401 100644
+--- a/src/sbefw/core/ipl.C
++++ b/src/sbefw/core/ipl.C
+@@ -29,6 +29,7 @@
+ 
+ #include "ipl.H"
+ #include "sbeConsole.H"
++#include "sbeIPLStatusLPC.H"
+ #include "sbeglobals.H"
+ 
+ #include "p9n2_perv_scom_addresses.H"
+@@ -122,6 +123,7 @@ void sbeDoContinuousIpl()
+                 auto istepMap = &istepTableEntry->istepMinorArr[step-1];
+                 if(istepMap->istepWrapper != NULL)
+                 {
++                    SBE_PUT_ISTEP_LPC(istepTableEntry->istepMajorNum, step);
+                     SBE_MSG_CONSOLE("istep ", istepTableEntry->istepMajorNum, ".", step);
+                     rc = istepMap->istepWrapper(istepMap->istepHwp);
+                 }
+diff --git a/src/sbefw/core/sbeIPLStatusLPC.C b/src/sbefw/core/sbeIPLStatusLPC.C
+new file mode 100644
+index 00000000..499e795f
+--- /dev/null
++++ b/src/sbefw/core/sbeIPLStatusLPC.C
+@@ -0,0 +1,91 @@
++/* IBM_PROLOG_BEGIN_TAG                                                   */
++/* This is an automatically generated prolog.                             */
++/*                                                                        */
++/* $Source: src/sbefw/core/sbeConsole.C $                                 */
++/*                                                                        */
++/* OpenPOWER sbe Project                                                  */
++/*                                                                        */
++/* Contributors Listed Below - COPYRIGHT 2018-2019                        */
++/* [+] International Business Machines Corp.                              */
++/* [+] Raptor Engineering, LLC                                            */
++/*                                                                        */
++/*                                                                        */
++/* Licensed under the Apache License, Version 2.0 (the "License");        */
++/* you may not use this file except in compliance with the License.       */
++/* You may obtain a copy of the License at                                */
++/*                                                                        */
++/*     http://www.apache.org/licenses/LICENSE-2.0                         */
++/*                                                                        */
++/* Unless required by applicable law or agreed to in writing, software    */
++/* distributed under the License is distributed on an "AS IS" BASIS,      */
++/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
++/* implied. See the License for the specific language governing           */
++/* permissions and limitations under the License.                         */
++/*                                                                        */
++/* IBM_PROLOG_END_TAG                                                     */
++#include "sbetrace.H"
++#include "fapi2.H"
++
++#include "sbeIPLStatusLPC.H"
++
++#include "p9_perv_scom_addresses.H"
++#include "p9_perv_scom_addresses_fld.H"
++#include "p9_misc_scom_addresses.H"
++#include "p9_misc_scom_addresses_fld.H"
++
++#include "sberegaccess.H"
++#include "sbeglobals.H"
++#include "p9_lpc_utils.H"
++
++using namespace fapi2;
++
++static uint32_t writeLPCReg(uint8_t i_addr,
++                  uint8_t i_data)
++{
++    uint32_t rc = SBE_SEC_OPERATION_SUCCESSFUL;
++
++    do {
++        Target<TARGET_TYPE_PROC_CHIP > proc = plat_getChipTarget();
++
++        buffer<uint32_t> data = 0;
++        data.insert(i_data, 0, 8);
++
++        ReturnCode fapiRc = lpc_rw(proc,
++                                   LPC_IO_SPACE + i_addr,
++                                   sizeof(uint8_t),
++                                   false,
++                                   false,
++                                   data);
++        if(fapiRc != FAPI2_RC_SUCCESS)
++        {
++            rc = SBE_SEC_LPC_ACCESS_FAILED;
++            break;
++        }
++    } while(0);
++
++    return rc;
++}
++
++void postPutIStep(char major, char minor)
++{
++    #define SBE_FUNC "postPutIStep"
++    uint32_t rc = SBE_SEC_OPERATION_SUCCESSFUL;
++    do {
++        rc = writeLPCReg(0x81, major);
++        if(rc != SBE_SEC_OPERATION_SUCCESSFUL)
++        {
++            SBE_ERROR(SBE_FUNC " failure to write IPL status 1");
++            break;
++        }
++
++        rc = writeLPCReg(0x82, minor);
++        if(rc != SBE_SEC_OPERATION_SUCCESSFUL)
++        {
++            SBE_ERROR(SBE_FUNC " failure to write IPL status 2");
++            break;
++        }
++
++    } while(0);
++
++    #undef SBE_FUNC
++}
+diff --git a/src/sbefw/core/sbeIPLStatusLPC.H b/src/sbefw/core/sbeIPLStatusLPC.H
+new file mode 100644
+index 00000000..ba3533cb
+--- /dev/null
++++ b/src/sbefw/core/sbeIPLStatusLPC.H
+@@ -0,0 +1,58 @@
++/* IBM_PROLOG_BEGIN_TAG                                                   */
++/* This is an automatically generated prolog.                             */
++/*                                                                        */
++/* $Source: src/sbefw/core/sbeConsole.H $                                 */
++/*                                                                        */
++/* OpenPOWER sbe Project                                                  */
++/*                                                                        */
++/* Contributors Listed Below - COPYRIGHT 2018                             */
++/* [+] International Business Machines Corp.                              */
++/* [+] Raptor Engineering, LLC                                            */
++/*                                                                        */
++/*                                                                        */
++/* Licensed under the Apache License, Version 2.0 (the "License");        */
++/* you may not use this file except in compliance with the License.       */
++/* You may obtain a copy of the License at                                */
++/*                                                                        */
++/*     http://www.apache.org/licenses/LICENSE-2.0                         */
++/*                                                                        */
++/* Unless required by applicable law or agreed to in writing, software    */
++/* distributed under the License is distributed on an "AS IS" BASIS,      */
++/* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or        */
++/* implied. See the License for the specific language governing           */
++/* permissions and limitations under the License.                         */
++/*                                                                        */
++/* IBM_PROLOG_END_TAG                                                     */
++#pragma once
++
++#include "sbe_sp_intf.H"
++#include "sbe_build_info.H"
++
++#ifndef SBE_IPL_STATUS_LPC_SUPPORT
++
++#define SBE_ISTEP_LPC_INIT
++#define SBE_ISTEP_LPC_DISABLE
++#define SBE_PUT_ISTEP_LPC(major, minor)
++
++#else
++
++#define SBE_ISTEP_LPC_INIT {         \
++    SBE_GLOBAL->sbeLPCActive = true; \
++}
++
++#define SBE_ISTEP_LPC_DISABLE {       \
++    SBE_GLOBAL->sbeLPCActive = false; \
++}
++
++#define SBE_PUT_ISTEP_LPC(major, minor) \
++    if(SBE_GLOBAL->sbeLPCActive) \
++    { \
++        postPutIStep(major, minor); \
++    }
++
++#define LPC_IO_SPACE        0xD0010000
++#define LPC_MAX_IO_SPACE    (64*1024)
++
++void postPutIStep(char major, char minor);
++
++#endif // SBE_IPL_STATUS_LPC_SUPPORT
+diff --git a/src/sbefw/core/sbeglobals.C b/src/sbefw/core/sbeglobals.C
+index d4640107..79dc0255 100644
+--- a/src/sbefw/core/sbeglobals.C
++++ b/src/sbefw/core/sbeglobals.C
+@@ -56,6 +56,10 @@ uint8_t  SBEGlobalsSingleton::failedCmd        = 0;
+ 
+ bool  SBEGlobalsSingleton::isHreset = false;
+ 
++#ifdef SBE_IPL_STATUS_LPC_SUPPORT
++bool SBEGlobalsSingleton::sbeLPCActive = false;
++#endif
++
+ #ifdef SBE_CONSOLE_SUPPORT
+ bool SBEGlobalsSingleton::sbeUartActive = false;
+ #endif
+diff --git a/src/sbefw/core/sbeglobals.H b/src/sbefw/core/sbeglobals.H
+index 3b2b0ad9..72f9222c 100644
+--- a/src/sbefw/core/sbeglobals.H
++++ b/src/sbefw/core/sbeglobals.H
+@@ -85,6 +85,10 @@ class SBEGlobalsSingleton
+          */
+         PkSemaphore sbeSemAsyncProcess;
+ 
++        #ifdef SBE_IPL_STATUS_LPC_SUPPORT
++        static bool sbeLPCActive;
++        #endif
++
+         #ifdef SBE_CONSOLE_SUPPORT
+         // Binary semaphore to protect uart access
+         PkSemaphore sbeUartBinSem;
+-- 
+2.21.0
+
