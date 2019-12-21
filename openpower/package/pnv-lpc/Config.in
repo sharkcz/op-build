@@ -1,0 +1,5 @@
+config BR2_PACKAGE_PNV_LPC
+	bool "pnv-lpc"
+	default n
+	help
+	  Build and install PowerNV LPC debug utility

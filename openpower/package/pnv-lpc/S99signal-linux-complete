@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Copyright © 2019 Raptor Engineering, LLC
+# Copyright © 2019 Dan Horák - transformed into sysvinit service
+# Released under the GNU GPL v3
+
+case "$1" in
+    start)
+	# Make sure debugfs is mounted
+	if [ ! -e /sys/kernel/debug/powerpc ]; then
+		mount -t debugfs none /sys/kernel/debug/
+	fi
+
+	# Send 0xfefe start code via port 81h/82h
+	pnv-lpc io 0x81.b=254
+	pnv-lpc io 0x82.b=254
+	;;
+esac
+
+# Always return success
+exit 0
