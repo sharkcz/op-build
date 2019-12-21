@@ -93,8 +93,8 @@ index 00000000..2d12c63c
 +static void blackbird_exit(void)
 +{
 +	/* Let the IPL Observer know that we're done */
-+	lpc_probe_write(OPAL_LPC_IO, 0x81, 0xfe, 1);
-+	lpc_probe_write(OPAL_LPC_IO, 0x82, 0xfe, 1);
++	/*lpc_probe_write(OPAL_LPC_IO, 0x81, 0xfe, 1);*/
++	/*lpc_probe_write(OPAL_LPC_IO, 0x82, 0xfe, 1);*/
 +
 +	astbmc_exit();
 +}
